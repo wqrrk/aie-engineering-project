@@ -5,6 +5,7 @@ from typing import Optional
 
 import pandas as pd
 import typer
+import json
 
 from .core import (
     DatasetSummary,
@@ -36,7 +37,7 @@ def _load_csv(
         return pd.read_csv(path, sep=sep, encoding=encoding)
     except Exception as exc:  # noqa: BLE001
         raise typer.BadParameter(f"Не удалось прочитать CSV: {exc}") from exc
-
+    
 
 @app.command()
 def overview(
@@ -67,6 +68,9 @@ def report(
     sep: str = typer.Option(",", help="Разделитель в CSV."),
     encoding: str = typer.Option("utf-8", help="Кодировка файла."),
     max_hist_columns: int = typer.Option(6, help="Максимум числовых колонок для гистограмм."),
+    title: str = typer.Option("Главный отчет", help = "Заголовок отчета"),
+    min_missing_share: float = typer.Option(0.01, help = "Порог доли пропусков"),
+    json_summary: bool = typer.Option(False, help = "Создать сводку в JSON")
 ) -> None:
     """
     Сгенерировать полный EDA-отчёт:
@@ -102,6 +106,7 @@ def report(
     # 4. Markdown-отчёт
     md_path = out_root / "report.md"
     with md_path.open("w", encoding="utf-8") as f:
+        f.write(f"{title}\n")
         f.write(f"# EDA-отчёт\n\n")
         f.write(f"Исходный файл: `{Path(path).name}`\n\n")
         f.write(f"Строк: **{summary.n_rows}**, столбцов: **{summary.n_cols}**\n\n")
@@ -111,7 +116,18 @@ def report(
         f.write(f"- Макс. доля пропусков по колонке: **{quality_flags['max_missing_share']:.2%}**\n")
         f.write(f"- Слишком мало строк: **{quality_flags['too_few_rows']}**\n")
         f.write(f"- Слишком много колонок: **{quality_flags['too_many_columns']}**\n")
-        f.write(f"- Слишком много пропусков: **{quality_flags['too_many_missing']}**\n\n")
+        f.write(f"- Слишком много пропусков: **{quality_flags['too_many_missing']}**\n")
+        #добавим в отчет новые эвристики
+        f.write(f"- Есть константные колонки: **{quality_flags['has_constant_columns']}**\n")
+        f.write(f"- Есть дубликаты ID: **{quality_flags['has_suspicious_id_duplicates']}**\n")
+        f.write(f"- Превышено значение порога доли нулей в колонках **{quality_flags['has_many_zero_values']}**\n\n") 
+
+        f.write("## Колонки с превышением доли пропуска \n\n")# добавим опцию с записью в отчет колонок со слишком большой долей пропуска
+        f.write(f"Критичная доля пропуска **{min_missing_share}**\n")
+        for col in summary.columns: 
+            if col.missing_share > min_missing_share: 
+                f.write(f"Колонка **{col.name}**, доля пропуска **{col.missing_share}**\n")
+
 
         f.write("## Колонки\n\n")
         f.write("См. файл `summary.csv`.\n\n")
@@ -146,6 +162,42 @@ def report(
     typer.echo(f"- Основной markdown: {md_path}")
     typer.echo("- Табличные файлы: summary.csv, missing.csv, correlation.csv, top_categories/*.csv")
     typer.echo("- Графики: hist_*.png, missing_matrix.png, correlation_heatmap.png")
+
+    #6. Создаем краткую сводку в JSON
+    if json_summary: 
+        json_path = out_root / "summary.json"
+        missing_cols = [col.name for col in summary.columns if col.missing_share > 0.05]
+        constant_cols = [col.name for col in summary.columns if col.unique == 1]
+        id_duplicates = [col.name for col in summary.columns if (col.name == "user_id" and col.unique < summary.n_rows)]
+        many_zeros = [col.name for col in summary.columns if col.digit_null_amount > summary.n_rows / 2]
+
+        json_data = { 
+            "n_rows" : summary.n_rows, 
+            "n_cols" : summary.n_cols,
+            "quality_score" : quality_flags["quality_score"],
+            "max_missing_share" : quality_flags["max_missing_share"], 
+            "problem_collumns" : {
+                "missing_cols" : missing_cols,
+                "constant_cols" : constant_cols,
+                "id_duplicates" : id_duplicates,
+                "many_zeros" : many_zeros
+            }
+        }
+        with open(json_path, "w", encoding="utf-8" ) as j: 
+            json.dump(json_data, j, indent = 2)
+
+
+#Добавим новую команду в typer, пусть это будет head
+@app.command()
+def head(path: str = typer.Argument(..., help="Путь к CSV-файлу."),
+    out_dir: str = typer.Option("reports", help="Каталог для отчёта."),
+    sep: str = typer.Option(",", help="Разделитель в CSV."),
+    encoding: str = typer.Option("utf-8", help="Кодировка файла."),
+    amount: int = typer.Option(10, help = "Количество строк для head")) -> None: 
+    df = _load_csv(Path(path), sep=sep, encoding=encoding)
+    res = df[:amount] 
+    typer.echo(f"Head for **{amount}** elements")
+    typer.echo(res)
 
 
 if __name__ == "__main__":

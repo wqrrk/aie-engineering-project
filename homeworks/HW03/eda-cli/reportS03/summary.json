@@ -1,0 +1,19 @@
+{
+  "n_rows": 36,
+  "n_cols": 14,
+  "quality_score": 0.5444444444444445,
+  "max_missing_share": 0.05555555555555555,
+  "problem_collumns": {
+    "missing_cols": [
+      "city",
+      "avg_session_duration_min"
+    ],
+    "constant_cols": [],
+    "id_duplicates": [
+      "user_id"
+    ],
+    "many_zeros": [
+      "churned"
+    ]
+  }
+}

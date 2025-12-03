@@ -17,6 +17,7 @@ class ColumnSummary:
     unique: int
     example_values: List[Any]
     is_numeric: bool
+    digit_null_amount: int #Поле количества нулей в строке
     min: Optional[float] = None
     max: Optional[float] = None
     mean: Optional[float] = None
@@ -64,6 +65,8 @@ def summarize_dataset(
         missing = n_rows - non_null
         missing_share = float(missing / n_rows) if n_rows > 0 else 0.0
         unique = int(s.nunique(dropna=True))
+        
+
 
         # Примерные значения выводим как строки
         examples = (
@@ -77,8 +80,11 @@ def summarize_dataset(
         max_val: Optional[float] = None
         mean_val: Optional[float] = None
         std_val: Optional[float] = None
+        
+        zeros = 0
 
         if is_numeric and non_null > 0:
+            zeros = (s == 0).sum()
             min_val = float(s.min())
             max_val = float(s.max())
             mean_val = float(s.mean())
@@ -94,6 +100,7 @@ def summarize_dataset(
                 unique=unique,
                 example_values=examples,
                 is_numeric=is_numeric,
+                digit_null_amount=zeros,
                 min=min_val,
                 max=max_val,
                 mean=mean_val,
@@ -146,7 +153,7 @@ def top_categories(
     """
     result: Dict[str, pd.DataFrame] = {}
     candidate_cols: List[str] = []
-
+    
     for name in df.columns:
         s = df[name]
         if ptypes.is_object_dtype(s) or isinstance(s.dtype, pd.CategoricalDtype):
@@ -181,16 +188,47 @@ def compute_quality_flags(summary: DatasetSummary, missing_df: pd.DataFrame) -> 
     flags["too_few_rows"] = summary.n_rows < 100
     flags["too_many_columns"] = summary.n_cols > 100
 
+    
+
     max_missing_share = float(missing_df["missing_share"].max()) if not missing_df.empty else 0.0
     flags["max_missing_share"] = max_missing_share
     flags["too_many_missing"] = max_missing_share > 0.5
 
+
+    # HW03 Новые эвристики
+    has_constant_columns = any(col.unique == 1 for col in summary.columns) #есть ли хоть один дубликат целой колонки
+    flags["has_constant_columns"] = has_constant_columns
+    
+    has_suspicious_id_duplicates = False #пока считаем что дубликатов нет
+    for col in summary.columns: #проверим есть ли дубликаты
+        if (col.name == "user_id"): 
+            if col.unique < summary.n_rows: 
+                has_suspicious_id_duplicates = True
+                break 
+    flags["has_suspicious_id_duplicates"] = has_suspicious_id_duplicates
+
+    has_many_zero_values = False 
+    zero_share = 0
+    for col in summary.columns: 
+        if col.is_numeric and col.non_null > 0: 
+            zero_share = col.digit_null_amount / col.non_null
+            if zero_share > 0.5: 
+                has_many_zero_values = True 
+    flags["has_many_zero_values"] = has_many_zero_values 
+
     # Простейший «скор» качества
     score = 1.0
-    score -= max_missing_share  # чем больше пропусков, тем хуже
+    score -= max_missing_share # чем больше пропусков, тем хуже
     if summary.n_rows < 100:
         score -= 0.2
     if summary.n_cols > 100:
+        score -= 0.1
+    #добавим новые эвристики в скор качества
+    if has_constant_columns: 
+        score -= 0.1
+    if has_many_zero_values: 
+        score -= 0.1
+    if has_suspicious_id_duplicates: 
         score -= 0.1
 
     score = max(0.0, min(1.0, score))
@@ -214,6 +252,7 @@ def flatten_summary_for_print(summary: DatasetSummary) -> pd.DataFrame:
                 "missing_share": col.missing_share,
                 "unique": col.unique,
                 "is_numeric": col.is_numeric,
+                "digit_null_amount": col.digit_null_amount,
                 "min": col.min,
                 "max": col.max,
                 "mean": col.mean,

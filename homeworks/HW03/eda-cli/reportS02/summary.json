@@ -1,0 +1,14 @@
+{
+  "n_rows": 41,
+  "n_cols": 5,
+  "quality_score": 0.651219512195122,
+  "max_missing_share": 0.04878048780487805,
+  "problem_collumns": {
+    "missing_cols": [],
+    "constant_cols": [],
+    "id_duplicates": [
+      "user_id"
+    ],
+    "many_zeros": []
+  }
+}

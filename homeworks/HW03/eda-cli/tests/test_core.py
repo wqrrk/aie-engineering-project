@@ -21,6 +21,30 @@ def _sample_df() -> pd.DataFrame:
         }
     )
 
+def _sample_constant_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "constant_col": [1, 1, 1, 1],
+            "mixed_col": [1, 2, 1, 2],
+        }
+    )
+
+def _sample_id_dublicates_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        { 
+            "user_id": [10,10,20,10,40],
+            "country": ["US", "US", "RU", "US", "PL"],
+        }
+    )
+
+def _sample_zero_value_df() -> pd.DataFrame: 
+    return pd.DataFrame(
+        { 
+            "user_id": [10,20,30,40,50,60],
+            "user_score": [0,0,0,10,20,30],
+            "level": [1,0,0,0,1,0],
+        }
+    )
 
 def test_summarize_dataset_basic():
     df = _sample_df()
@@ -59,3 +83,28 @@ def test_correlation_and_top_categories():
     city_table = top_cats["city"]
     assert "value" in city_table.columns
     assert len(city_table) <= 2
+
+
+#новые тесты для эвристик качества из HW03 
+def test_constant_columns(): 
+    df = _sample_constant_df() 
+    summarize_const = summarize_dataset(df) 
+    missing_const = missing_table(df)
+    quality_flags = compute_quality_flags(summarize_const,missing_const)
+    assert quality_flags["has_constant_columns"] is True
+
+
+def test_suspicious_id_duplicates(): 
+    df = _sample_id_dublicates_df()
+    summarize_id = summarize_dataset(df) 
+    missing_id = missing_table(df)
+    quality_flags = compute_quality_flags(summarize_id,missing_id)
+    assert quality_flags["has_suspicious_id_duplicates"] is True
+
+
+def test_many_zero_values(): 
+    df = _sample_zero_value_df()     
+    summarize_zero = summarize_dataset(df) 
+    missing_zero = missing_table(df)
+    quality_flags = compute_quality_flags(summarize_zero,missing_zero)
+    assert quality_flags["has_many_zero_values"] is True
